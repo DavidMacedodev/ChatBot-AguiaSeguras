@@ -48,13 +48,26 @@ async def webhook(request: Request):
     data = await request.json()
     print("WEBHOOK:", data)
 
-    message = data.get("messages", [{}])[0]
+    # 1️⃣ ignora qualquer coisa que não seja mensagem
+    if "messages" not in data:
+        return {"status": "ignored_not_message"}
 
+    message = data["messages"][0]
+
+    # 2️⃣ ignora mensagens do próprio bot
     if message.get("from_me"):
         return {"status": "ignored_from_me"}
 
+    # 3️⃣ ignora mensagens de grupo
+    # grupos sempre terminam com @g.us
+    chat_id = message.get("chat_id") or message.get("from")
+    if chat_id and chat_id.endswith("@g.us"):
+        return {"status": "ignored_group"}
+
+    # 4️⃣ pega o número corretamente
     from_number = message.get("from")
 
+    # 5️⃣ pega texto (todos formatos possíveis)
     text = (
         message.get("text", {}).get("body")
         or message.get("text")
@@ -62,8 +75,9 @@ async def webhook(request: Request):
     ).strip()
 
     if not text:
-        return {"status": "no_text"}
+        return {"status": "ignored_no_text"}
 
+    # 6️⃣ lógica do bot
     if text in SEGURADORAS:
         seguradora = SEGURADORAS[text]
         reply = (
@@ -73,6 +87,7 @@ async def webhook(request: Request):
     else:
         reply = build_menu()
 
+    # 7️⃣ envia resposta
     send_message(from_number, reply)
 
     return {"status": "sent"}
