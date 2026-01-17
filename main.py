@@ -1,14 +1,17 @@
 from fastapi import FastAPI, Request
+import requests
+import os
 from seguradoras import SEGURADORAS
 
 app = FastAPI()
+
+WHAPI_TOKEN = os.getenv("WHAPI_TOKEN")
 
 MENU_HEADER = (
     "Olá! 👋\n"
     "No momento estamos fora do horário de atendimento.\n\n"
     "Selecione sua seguradora:\n"
 )
-
 
 DIGIT_TO_KEYCAP = {
     "0": "0️⃣",
@@ -23,10 +26,8 @@ DIGIT_TO_KEYCAP = {
     "9": "9️⃣",
 }
 
-
 def format_keycap_number(number_str: str) -> str:
     return "".join(DIGIT_TO_KEYCAP.get(d, d) for d in number_str)
-
 
 def build_menu() -> str:
     items = [
@@ -35,22 +36,38 @@ def build_menu() -> str:
     ]
     return MENU_HEADER + "\n".join(items)
 
+def enviar_mensagem(chat_id: str, texto: str):
+    url = "https://gate.whapi.cloud/messages/text"
+    headers = {
+        "Authorization": f"Bearer {WHAPI_TOKEN}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "to": chat_id,
+        "body": texto
+    }
+    requests.post(url, headers=headers, json=payload)
+
 @app.post("/webhook")
 async def webhook(request: Request):
     data = await request.json()
 
-    # 🔹 Ajuste conforme a API do WhatsApp (Z-API, etc.)
-    message = data.get("message", "").strip()
+    message = data.get("message", {})
+    chat_id = message.get("chatId")
+    text = message.get("body", "").strip()
 
-    # Se o usuário escolheu uma opção
-    if message in SEGURADORAS:
-        seguradora = SEGURADORAS[message]
-        return {
-            "reply": (
-                f"📞 {seguradora['nome']}\n"
-                f"Telefone: {seguradora['telefone']}"
-            )
-        }
+    if not chat_id or not text:
+        return {"status": "ignored"}
 
-    # Qualquer outra coisa → mostra menu
-    return {"reply": build_menu()}
+    # Usuário escolheu opção
+    if text in SEGURADORAS:
+        seguradora = SEGURADORAS[text]
+        enviar_mensagem(
+            chat_id,
+            f"📞 {seguradora['nome']}\nTelefone: {seguradora['telefone']}"
+        )
+        return {"status": "ok"}
+
+    # Qualquer outra coisa → menu
+    enviar_mensagem(chat_id, build_menu())
+    return {"status": "ok"}
