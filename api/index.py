@@ -36,7 +36,12 @@ def build_menu() -> str:
 async def webhook(request: Request):
     data = await request.json()
 
-    message = data.get("message", "").strip().lower()
+    message = (
+        data.get("messages", [{}])[0]
+        .get("text", {})
+        .get("body", "")
+        .strip()
+    )
 
     if message in SEGURADORAS:
         seguradora = SEGURADORAS[message]
