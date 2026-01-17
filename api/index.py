@@ -47,14 +47,22 @@ def send_message(to: str, text: str):
 async def webhook(request: Request):
     data = await request.json()
 
-    message_data = data["messages"][0]
+    message = data.get("messages", [{}])[0]
 
-    # 🚫 evita loop infinito
-    if message_data.get("from_me"):
-        return {"status": "ignored"}
+    # 🚫 ignora mensagens do próprio bot
+    if message.get("from_me"):
+        return {"status": "ignored_from_me"}
 
-    from_number = message_data["from"]
-    text = message_data["text"]["body"].strip()
+    # 🚫 ignora mensagens sem texto
+    if message.get("type") != "chat":
+        return {"status": "ignored_type"}
+
+    # 🚫 ignora mensagens antigas / duplicadas
+    if message.get("is_forwarded") or message.get("is_status"):
+        return {"status": "ignored_duplicate"}
+
+    from_number = message["from"]
+    text = message["text"]["body"].strip()
 
     if text in SEGURADORAS:
         seguradora = SEGURADORAS[text]
@@ -68,3 +76,4 @@ async def webhook(request: Request):
     send_message(from_number, reply)
 
     return {"status": "sent"}
+
