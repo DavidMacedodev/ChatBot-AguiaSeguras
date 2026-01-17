@@ -46,23 +46,23 @@ def send_message(to: str, text: str):
 @app.post("/api/webhook")
 async def webhook(request: Request):
     data = await request.json()
+    print("WEBHOOK:", data)
 
     message = data.get("messages", [{}])[0]
 
-    # 🚫 ignora mensagens do próprio bot
     if message.get("from_me"):
         return {"status": "ignored_from_me"}
 
-    # 🚫 ignora mensagens sem texto
-    if message.get("type") != "chat":
-        return {"status": "ignored_type"}
+    from_number = message.get("from")
 
-    # 🚫 ignora mensagens antigas / duplicadas
-    if message.get("is_forwarded") or message.get("is_status"):
-        return {"status": "ignored_duplicate"}
+    text = (
+        message.get("text", {}).get("body")
+        or message.get("text")
+        or ""
+    ).strip()
 
-    from_number = message["from"]
-    text = message["text"]["body"].strip()
+    if not text:
+        return {"status": "no_text"}
 
     if text in SEGURADORAS:
         seguradora = SEGURADORAS[text]
@@ -76,4 +76,3 @@ async def webhook(request: Request):
     send_message(from_number, reply)
 
     return {"status": "sent"}
-
