@@ -1,6 +1,8 @@
 from fastapi import FastAPI, Request
 import requests
 import os
+from datetime import datetime, time
+import pytz
 from seguradoras import SEGURADORAS
 
 app = FastAPI()
@@ -8,11 +10,17 @@ app = FastAPI()
 WHAPI_TOKEN = os.environ["WHAPI_TOKEN"]
 WHAPI_URL = "https://gate.whapi.cloud/messages/text"
 
+BR_TZ = pytz.timezone("America/Sao_Paulo")
+
 MENU_HEADER = (
-    "Olá! 👋\n"
-    "No momento estamos fora do horário de atendimento.\n\n"
+    "Olá! Aqui é Jessé da Águia Seguros.\n\n"
+    "No momento estou fora do horário de atendimento.\n\n"
+    "Caso esteja precisando de assistência 24hrs como: "
+    "*Táxi*, *hotel*, *guincho*, *socorro mecânico* ou *elétrico*, "
+    "envie o número *conforme a sua seguradora* para que eu te envie o número de assistência!\n\n"
     "Selecione sua seguradora:\n"
 )
+
 
 DIGIT_TO_KEYCAP = {
     "0": "0️⃣", "1": "1️⃣", "2": "2️⃣", "3": "3️⃣", "4": "4️⃣",
@@ -30,6 +38,7 @@ def build_menu() -> str:
     return MENU_HEADER + "\n".join(items)
 
 def send_message(to: str, text: str):
+    print(f"📤 Enviando mensagem para {to}")
     requests.post(
         WHAPI_URL,
         headers={
@@ -43,31 +52,41 @@ def send_message(to: str, text: str):
         timeout=10,
     )
 
+def is_outside_business_hours() -> bool:
+    now = datetime.now(BR_TZ)
+    weekday = now.weekday()  # 0=segunda, 6=domingo
+    current_time = now.time()
+
+
+    # fim de semana → sempre ativo
+    if weekday >= 5:
+        return True
+
+    # dias úteis
+    start_business = time(7, 30)
+    end_business = time(18, 0)
+
+    # fora do horário comercial
+    return current_time < start_business or current_time >= end_business
+
 @app.post("/api/webhook")
 async def webhook(request: Request):
     data = await request.json()
-    print("WEBHOOK:", data)
 
-    # 1️⃣ ignora qualquer coisa que não seja mensagem
     if "messages" not in data:
         return {"status": "ignored_not_message"}
 
     message = data["messages"][0]
 
-    # 2️⃣ ignora mensagens do próprio bot
     if message.get("from_me"):
         return {"status": "ignored_from_me"}
 
-    # 3️⃣ ignora mensagens de grupo
-    # grupos sempre terminam com @g.us
     chat_id = message.get("chat_id") or message.get("from")
     if chat_id and chat_id.endswith("@g.us"):
         return {"status": "ignored_group"}
 
-    # 4️⃣ pega o número corretamente
     from_number = message.get("from")
 
-    # 5️⃣ pega texto (todos formatos possíveis)
     text = (
         message.get("text", {}).get("body")
         or message.get("text")
@@ -77,7 +96,12 @@ async def webhook(request: Request):
     if not text:
         return {"status": "ignored_no_text"}
 
-    # 6️⃣ lógica do bot
+    # ⛔ dentro do horário comercial → bot não responde
+    if not is_outside_business_hours():
+        print("🛑 Dentro do horário comercial. Bot ignorou.")
+        return {"status": "ignored_business_hours"}
+
+    # 🤖 fora do horário → bot ativo
     if text in SEGURADORAS:
         seguradora = SEGURADORAS[text]
         reply = (
@@ -87,7 +111,5 @@ async def webhook(request: Request):
     else:
         reply = build_menu()
 
-    # 7️⃣ envia resposta
     send_message(from_number, reply)
-
     return {"status": "sent"}
